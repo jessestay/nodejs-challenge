@@ -9,6 +9,7 @@ const productRouter = require('./routes/productRoute');
 const userRouter = require('./routes/userRoute');
 const regionMiddleware = require('./middlewares/regionMiddleware');
 const errorMiddleware = require('./middlewares/errorMiddleware');
+const { paymentLimiter, orderLimiter } = require('./middlewares/rateLimiter');
 const { HTTP_STATUS } = require('./config/constants');
 
 const app = express();
@@ -27,9 +28,11 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
+// Rate-limited route groups — limiters applied before route handlers
+app.use('/api/payment', paymentLimiter, paymentRouter);
+app.use('/api/order', orderLimiter, orderRouter);
 
-app.use('/api/payment', paymentRouter);
-app.use('/api/order', orderRouter);
+// Non-rate-limited route groups
 app.use('/api/product', productRouter);
 app.use('/api/user', userRouter);
 
