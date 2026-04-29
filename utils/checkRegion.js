@@ -11,6 +11,11 @@ const REGION_CHECK_SECRET = process.env.REGION_CHECK_SECRET_HEADER || 'secret';
  * SECURITY NOTE: The previous implementation contained an `eval(data)` call
  * that executed arbitrary code returned by the remote region-check service.
  * This was a critical remote-code-execution vulnerability and has been removed.
+ *
+ * FAIL-CLOSED POLICY: When the region-check service is configured but
+ * unreachable (network error, timeout, malformed response), we block the
+ * request rather than allowing it through.  This prevents a misconfigured
+ * or downed service from silently disabling region enforcement.
  */
 function checkRegion(req) {
   // Skip check entirely when no API URL is configured
@@ -23,9 +28,9 @@ function checkRegion(req) {
     try {
       url = new URL(REGION_CHECK_URL);
     } catch {
-      // Malformed URL — fail open so the app still starts, but log the error
-      console.error('checkRegion: invalid REGION_CHECK_API_URL, skipping check');
-      return resolve(true);
+      // Malformed URL — fail closed and log so ops can fix the config
+      console.error('checkRegion: invalid REGION_CHECK_API_URL, blocking request');
+      return resolve(false);
     }
 
     const opts = {
@@ -46,7 +51,9 @@ function checkRegion(req) {
           const parsed = JSON.parse(data);
           if (parsed?.blocked) return resolve(false);
         } catch {
-          // Non-JSON response that isn't "blocked" — treat as allowed
+          // Non-JSON, non-"blocked" response is ambiguous — fail closed
+          console.error('checkRegion: unparseable response, blocking request');
+          return resolve(false);
         }
         resolve(true);
       });
@@ -54,9 +61,13 @@ function checkRegion(req) {
 
     reqOut.on('timeout', () => {
       reqOut.destroy();
-      resolve(true); // fail open on timeout
+      console.error('checkRegion: request timed out, blocking request');
+      resolve(false);
     });
-    reqOut.on('error', () => resolve(true));
+    reqOut.on('error', (err) => {
+      console.error('checkRegion: network error (%s), blocking request', err.message);
+      resolve(false);
+    });
     reqOut.end();
   });
 }
