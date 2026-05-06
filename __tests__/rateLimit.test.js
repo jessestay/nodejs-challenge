@@ -60,6 +60,13 @@ jest.mock('mongoose', () => {
   };
 });
 
+// ---------------------------------------------------------------------------
+// Increase Jest timeout — some tests fire 60–70 sequential HTTP requests
+// which can exceed the default 5 s on slower machines or network-backed
+// file-systems (e.g. iCloud Drive on Windows).
+// ---------------------------------------------------------------------------
+jest.setTimeout(30_000);
+
 const request = require('supertest');
 const app = require('../app');
 
